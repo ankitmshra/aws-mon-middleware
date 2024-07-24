@@ -4,7 +4,7 @@ class IAMUser(models.Model):
     user_id = models.CharField(max_length=255, unique=True)
     user_name = models.CharField(max_length=255)
     tags = models.JSONField(default=list, blank=True)
-    last_login = models.DateTimeField()
+    last_login = models.TextField()
 
     class Meta:
         verbose_name = 'IAM User'
@@ -40,8 +40,8 @@ class EC2Instance(models.Model):
 class EBSVolume(models.Model):
     volume_id = models.CharField(max_length=255, unique=True)
     size = models.IntegerField()
-    creation_date = models.DateTimeField()
     region = models.CharField(max_length=50)
+    status = models.CharField(max_length=50, null=True)
     tags = models.JSONField(default=list, blank=True)
     potential_cost_savings = models.FloatField()
     recommendations = models.TextField()
