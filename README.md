@@ -1,2 +1,2 @@
-# vendor-api
-REST API based endpoints for multiple apparel vendors.
+# aws-mon-api
+REST API based endpoints for aws monitoring tools dashboard
