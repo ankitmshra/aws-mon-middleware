@@ -15,8 +15,6 @@ class S3Bucket(models.Model):
     creation_date = models.DateTimeField()
     tags = models.JSONField(default=list, blank=True)
     status = models.CharField(max_length=50)
-    potential_cost_savings = models.FloatField()
-    recommendations = models.TextField()
 
     class Meta:
         verbose_name = 'S3 Bucket'

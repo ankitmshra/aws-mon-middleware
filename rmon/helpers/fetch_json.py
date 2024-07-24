@@ -6,9 +6,7 @@ from django.conf import settings
 
 def format_json(raw_json_string):
     try:
-        parsed_json = json.loads(raw_json_string)
-        body_json_string = parsed_json['body']
-        body_json = json.loads(body_json_string)
+        body_json = json.loads(raw_json_string)
         formatted_json = json.dumps(body_json, indent=4)
         return formatted_json
     except (json.JSONDecodeError, KeyError) as e:
@@ -31,7 +29,7 @@ def fetch_json(aws_access_key_id, aws_secret_access_key,
         return pretty_json,True
 
     except ValueError as e:
-        return (("Error formatting JSON"), False)
+        return (f"Error formatting JSON {str(e)}", False)
     except ClientError as e:
         error_message = e.response['Error']['Message']
         return ((f"S3 ClientError: {error_message}"), False)

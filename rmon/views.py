@@ -60,8 +60,6 @@ class UpdateDataView(APIView):
                     creation_date=bucket["CreationDate"],
                     tags=bucket["Tags"],
                     status=bucket["Status"],
-                    potential_cost_savings=bucket["PotentialCostSavings"],
-                    recommendations=bucket["Recommendations"]
                 )
 
             # Update resources per region
