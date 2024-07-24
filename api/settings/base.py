@@ -161,3 +161,10 @@ CACHES = {
 CACHE_MIDDLEWARE_ALIAS = "default"
 CACHE_MIDDLEWARE_SECONDS = 3600
 CACHE_MIDDLEWARE_KEY_PREFIX = ""
+
+# AWS CREDENTIALS
+AWS_ACCESS_KEY = config("aws_access_key_id")
+AWS_SECRET_ACCESS_KEY = config('aws_secret_access_key')
+AWS_REGION = config('aws_region')
+BUCKET_NAME = config('bucket_name')
+OBJECT_KEY = config('object_key')
