@@ -29,4 +29,5 @@ urlpatterns = [
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("", SpectacularSwaggerView.as_view(url_name="schema"), name="swagger-ui"),
     path("api/rmon/", include("rmon.urls", namespace="resourcemon")),
+    path("api/credman/", include("credman.urls", namespace="credentials-manager")),
 ]
