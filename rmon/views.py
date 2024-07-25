@@ -224,11 +224,11 @@ class UpdateDataView(APIView):
     def update_ec2_snapshots(self, region, resources):
         # Old EC2 Snapshots
         region.old_ec2_snapshots.clear()
-        for ec2_snapshot in resources.get("OldEC2Snapshots", []):
+        for ec2_snapshot in resources.get("OldEBSSnapshots", []):
             snapshot, _ = EC2Snapshot.objects.get_or_create(
                 snapshot_id=ec2_snapshot["SnapshotId"],
                 defaults={
-                    "creation_date": ec2_snapshot["CreationDate"],
+                    "creation_date": ec2_snapshot["StartTime"],
                     "region": ec2_snapshot["Region"],
                     "potential_cost_savings": ec2_snapshot["PotentialCostSavings"].split(" ")[0],
                     "recommendations": ec2_snapshot["Recommendations"]
@@ -239,7 +239,7 @@ class UpdateDataView(APIView):
     def update_elastic_ips(self, region, resources):
         # Unused Elastic IPs
         region.unused_elastic_ips.clear()
-        for elastic_ip in resources.get("UnusedElasticIPs", []):
+        for elastic_ip in resources.get("AvailableElasticIPs", []):
             eip, _ = ElasticIP.objects.get_or_create(
                 allocation_id=elastic_ip["AllocationId"],
                 defaults={
@@ -248,7 +248,6 @@ class UpdateDataView(APIView):
                     "tags": elastic_ip["Tags"],
                     "potential_cost_savings": elastic_ip["PotentialCostSavings"].split(" ")[0],
                     "recommendations": elastic_ip["Recommendations"],
-                    "age": elastic_ip["Age"]
                 }
             )
             region.unused_elastic_ips.add(eip)
