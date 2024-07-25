@@ -1,6 +1,5 @@
 import boto3
-from botocore.exceptions import NoCredentialsError, PartialCredentialsError, BotoCoreError
-
+from botocore.exceptions import NoCredentialsError, PartialCredentialsError, BotoCoreError, ClientError
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
@@ -31,17 +30,24 @@ class SaveAWSCredentialsView(APIView):
                 # Attempt to list S3 buckets to verify credentials
                 s3_client.list_buckets()
                 
-                # Check if credentials already exist for the user
-                aws_credentials, created = AWSAccountCredentials.objects.get_or_create(user=request.user)
+                # Remove any existing credentials for the user
+                AWSAccountCredentials.objects.filter(user=request.user).delete()
                 
-                if not created:
-                    # If the credentials already exist, update them
-                    serializer.update(aws_credentials, serializer.validated_data)
-                else:
-                    # If credentials were newly created, save them
-                    serializer.save(user=request.user)
+                # Save the new credentials
+                serializer.save(user=request.user)
 
                 return Response({"message": "AWS credentials saved successfully."}, status=201)
-            except (NoCredentialsError, PartialCredentialsError, BotoCoreError) as e:
-                return Response({"error": "Invalid AWS credentials: " + str(e)}, status=400)
+            except NoCredentialsError:
+                return Response({"error": "No AWS credentials found."}, status=400)
+            except PartialCredentialsError:
+                return Response({"error": "Partial AWS credentials provided."}, status=400)
+            except ClientError as e:
+                # Handle specific client errors, such as permissions issues
+                return Response({"error": f"AWS Client error: {e.response['Error']['Message']}"}, status=400)
+            except BotoCoreError as e:
+                # Handle general boto3 core errors
+                return Response({"error": f"BotoCore error: {str(e)}"}, status=400)
+            except Exception as e:
+                # Catch any other exceptions
+                return Response({"error": f"An unexpected error occurred: {str(e)}"}, status=500)
         return Response(serializer.errors, status=400)

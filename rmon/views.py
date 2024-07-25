@@ -28,16 +28,32 @@ EC2InstanceSerializer, RDSInstanceSerializer, EBSVolumeSerializer, \
 RDSSnapshotSerializer, EC2SnapshotSerializer, ElasticIPSerializer, \
 ProjectSerializer
 
+from credman.models import AWSAccountCredentials as aac
+
 class UpdateDataView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
 
     def get(self, request, *args, **kwargs):
-        (data, fetch_status) = fj(settings.AWS_ACCESS_KEY, 
-                                  settings.AWS_SECRET_ACCESS_KEY, 
-                                  settings.AWS_REGION, 
-                                  settings.BUCKET_NAME, 
-                                  settings.OBJECT_KEY)
+
+        try:
+            # Retrieve AWS credentials for the user from the credman app
+            aws_credentials = aac.objects.get(user=request.user)
+        except aac.DoesNotExist:
+            return Response({"error": "No AWS credentials found for the user."},
+             status=status.HTTP_400_BAD_REQUEST)
+
+        aws_access_key_id = aws_credentials.aws_access_key_id
+        aws_secret_access_key = aws_credentials.aws_secret_access_key
+        aws_region = aws_credentials.aws_region
+        bucket_name = aws_credentials.bucket_name
+        object_key = aws_credentials.object_key
+
+        (data, fetch_status) = fj(aws_access_key_id, 
+                                  aws_secret_access_key, 
+                                  aws_region, 
+                                  bucket_name, 
+                                  object_key)
         
         if fetch_status:
             fs = FileSystemStorage(location=settings.STATIC_ROOT)
@@ -335,8 +351,9 @@ class CumulativeCostRangeView(APIView):
         end_date_str = request.query_params.get('end_date')
 
         if not start_date_str or not end_date_str:
-            return Response({"error": "Both 'start_date' and 'end_date' \
-            parameters are required."}, status=400)
+            return Response(
+                {"error": "Both 'start_date' and 'end_date' parameters are required."}
+                , status=400)
 
         try:
             # Parse the date strings
@@ -344,30 +361,35 @@ class CumulativeCostRangeView(APIView):
             end_date = parse_datetime(end_date_str)
 
             if start_date is None or end_date is None:
-                return Response({"error": "Invalid date format."}, 
-                status=400)
+                return Response({"error": "Invalid date format."}, status=400)
 
             # Query the cumulative cost history within the date range
             cost_history = CumulativeCostHistory.objects.filter(
-                recorded_at__range=[start_date, end_date]
-                )
-            
-            if not cost_history.exists():
-                return Response({"message": "No data available for \
-                the given date range."}, status=404)
+                recorded_at__range=[start_date, end_date])
 
-            data = [
-                {
-                    'ec2_cost': record.ec2_cost,
-                    'rds_cost': record.rds_cost,
-                    'ebs_cost': record.ebs_cost,
-                    'rds_snapshots_cost': record.rds_snapshots_cost,
-                    'ebs_snapshots_cost': record.ebs_snapshots_cost,
-                    'elastic_ips_cost': record.elastic_ips_cost,
-                    'recorded_at': format(record.recorded_at, 'Y-m-d H:i:s')
-                }
-                for record in cost_history
-            ]
+            if not cost_history.exists():
+                return Response(
+                    {"message": "No data available for the given date range."}, 
+                    status=404)
+
+            # Initialize empty lists for each cost type
+            data = {
+                'ec2_cost': [],
+                'rds_cost': [],
+                'ebs_cost': [],
+                'rds_snapshots_cost': [],
+                'ebs_snapshots_cost': [],
+                'elastic_ips_cost': []
+            }
+
+            # Populate the lists with data from the queried records
+            for record in cost_history:
+                data['ec2_cost'].append(record.ec2_cost)
+                data['rds_cost'].append(record.rds_cost)
+                data['ebs_cost'].append(record.ebs_cost)
+                data['rds_snapshots_cost'].append(record.rds_snapshots_cost)
+                data['ebs_snapshots_cost'].append(record.ebs_snapshots_cost)
+                data['elastic_ips_cost'].append(record.elastic_ips_cost)
 
             return Response(data, status=200)
 
