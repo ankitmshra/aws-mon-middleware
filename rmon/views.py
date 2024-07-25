@@ -10,6 +10,8 @@ from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.pagination import PageNumberPagination
 from django.core.files.storage import FileSystemStorage
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
 
 from .helpers.fetch_json import fetch_json as fj
 from .models import IAMUser, S3Bucket, EC2Instance, \
@@ -22,8 +24,11 @@ EC2InstanceSerializer, RDSInstanceSerializer, EBSVolumeSerializer, \
 RDSSnapshotSerializer, EC2SnapshotSerializer, ElasticIPSerializer
 
 class UpdateDataView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     def get(self, request, *args, **kwargs):
-        (data, fetch_status) = fj(settings.AWS_ACCESS_KEY, settings.AWS_SECRET_ACCESS_KEY, 
+        (data, fetch_status) = fj(settings.AWS_ACCESS_KEY, 
+        settings.AWS_SECRET_ACCESS_KEY, 
                                   settings.AWS_REGION, settings.BUCKET_NAME, 
                                   settings.OBJECT_KEY)
         
@@ -168,18 +173,27 @@ class UpdateDataView(APIView):
             return Response({"data": data}, status=status.HTTP_401_UNAUTHORIZED)
 
 class IAMUserListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     queryset = IAMUser.objects.all()
     serializer_class = IAMUserSerializer
 
 class S3BucketListView(ListAPIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     queryset = S3Bucket.objects.all()
     serializer_class = S3BucketSerializer
+
 class RegionDetailView(RetrieveAPIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     queryset = Region.objects.all()
     serializer_class = RegionSerializer
     lookup_field = 'name'
 
 class TotalResourceCountView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     def get(self, request, *args, **kwargs):
         try:
             regions = Region.objects.all()
@@ -189,6 +203,8 @@ class TotalResourceCountView(APIView):
             return Response({"error": str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 class AllResourcesView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
     def get(self, request, *args, **kwargs):
         # Fetch all resources
         ec2_instances = EC2Instance.objects.all()
