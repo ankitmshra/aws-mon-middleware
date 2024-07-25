@@ -2,6 +2,9 @@ import os
 import json
 
 from django.conf import settings
+from django.utils import timezone
+from django.utils.dateparse import parse_datetime
+from django.utils.dateformat import format
 from rest_framework.generics import ListAPIView, RetrieveAPIView
 from rest_framework import filters
 from django.http import Http404
@@ -16,7 +19,8 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .helpers.fetch_json import fetch_json as fj
 from .models import IAMUser, S3Bucket, EC2Instance, \
 EBSVolume, RDSSnapshot, ElasticIP, \
-Region, RDSInstance, EC2Snapshot, Project
+Region, RDSInstance, EC2Snapshot, Project, \
+CumulativeCost,CumulativeCostHistory
 
 from .serializers import IAMUserSerializer, S3BucketSerializer, \
 RegionSerializer, RegionResourceCountSerializer, ResourceDetailSerializer, \
@@ -69,6 +73,8 @@ class UpdateDataView(APIView):
                     status=bucket["Status"],
                 )
 
+            self.update_cumulative_cost(json_data)
+
             # Update resources per region
             for region_name, resources in json_data.items():
                 if region_name in ["global", "account_id", "project_name"]:
@@ -99,6 +105,38 @@ class UpdateDataView(APIView):
             user=user,
             project_name=json_data["project_name"],
             account_id=json_data["account_id"]
+        )
+
+    def update_cumulative_cost(self, json_data):
+        # Extract cumulative costs
+        cumulative_cost_data = json_data.get("global", {}).get("CumulativeCostOptimization", {})
+        ec2_cost = cumulative_cost_data.get("EC2", "0.00 USD").replace(" USD", "")
+        rds_cost = cumulative_cost_data.get("RDS", "0.00 USD").replace(" USD", "")
+        ebs_cost = cumulative_cost_data.get("EBS", "0.00 USD").replace(" USD", "")
+        rds_snapshots_cost = cumulative_cost_data.get("RDSSnapshots", "0.00 USD").replace(" USD", "")
+        ebs_snapshots_cost = cumulative_cost_data.get("EBSSnapshots", "0.00 USD").replace(" USD", "")
+        elastic_ips_cost = cumulative_cost_data.get("ElasticIPs", "0.00 USD").replace(" USD", "")
+
+        # Save current cost to history
+        CumulativeCostHistory.objects.create(
+            ec2_cost=ec2_cost,
+            rds_cost=rds_cost,
+            ebs_cost=ebs_cost,
+            rds_snapshots_cost=rds_snapshots_cost,
+            ebs_snapshots_cost=ebs_snapshots_cost,
+            elastic_ips_cost=elastic_ips_cost
+        )
+
+        # Update latest cumulative cost
+        CumulativeCost.objects.update_or_create(
+            defaults={
+                'ec2_cost': ec2_cost,
+                'rds_cost': rds_cost,
+                'ebs_cost': ebs_cost,
+                'rds_snapshots_cost': rds_snapshots_cost,
+                'ebs_snapshots_cost': ebs_snapshots_cost,
+                'elastic_ips_cost': elastic_ips_cost
+            }
         )
 
     def update_ec2_instances(self, region, resources):
@@ -263,3 +301,75 @@ class FetchAccountDetailsView(APIView):
         projects = Project.objects.filter(user=request.user)
         serializer = ProjectSerializer(projects, many=True)
         return Response(serializer.data, status=200)
+
+class LatestCumulativeCostView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        try:
+            # Get the latest cumulative cost record
+            latest_cost = CumulativeCost.objects.latest('last_updated')
+            data = {
+                'ec2_cost': latest_cost.ec2_cost,
+                'rds_cost': latest_cost.rds_cost,
+                'ebs_cost': latest_cost.ebs_cost,
+                'rds_snapshots_cost': latest_cost.rds_snapshots_cost,
+                'ebs_snapshots_cost': latest_cost.ebs_snapshots_cost,
+                'elastic_ips_cost': latest_cost.elastic_ips_cost,
+                'last_updated': latest_cost.last_updated
+            }
+            return Response(data, status=200)
+        except CumulativeCost.DoesNotExist:
+            return Response(
+                {"error": "No cumulative cost data available."}, 
+            status=404)
+
+
+class CumulativeCostRangeView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        start_date_str = request.query_params.get('start_date')
+        end_date_str = request.query_params.get('end_date')
+
+        if not start_date_str or not end_date_str:
+            return Response({"error": "Both 'start_date' and 'end_date' \
+            parameters are required."}, status=400)
+
+        try:
+            # Parse the date strings
+            start_date = parse_datetime(start_date_str)
+            end_date = parse_datetime(end_date_str)
+
+            if start_date is None or end_date is None:
+                return Response({"error": "Invalid date format."}, 
+                status=400)
+
+            # Query the cumulative cost history within the date range
+            cost_history = CumulativeCostHistory.objects.filter(
+                recorded_at__range=[start_date, end_date]
+                )
+            
+            if not cost_history.exists():
+                return Response({"message": "No data available for \
+                the given date range."}, status=404)
+
+            data = [
+                {
+                    'ec2_cost': record.ec2_cost,
+                    'rds_cost': record.rds_cost,
+                    'ebs_cost': record.ebs_cost,
+                    'rds_snapshots_cost': record.rds_snapshots_cost,
+                    'ebs_snapshots_cost': record.ebs_snapshots_cost,
+                    'elastic_ips_cost': record.elastic_ips_cost,
+                    'recorded_at': format(record.recorded_at, 'Y-m-d H:i:s')
+                }
+                for record in cost_history
+            ]
+
+            return Response(data, status=200)
+
+        except ValueError as e:
+            return Response({"error": str(e)}, status=400)

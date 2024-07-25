@@ -120,3 +120,30 @@ class Project(models.Model):
 
     def __str__(self):
         return f'{self.project_name} - {self.account_id}'
+
+class CumulativeCost(models.Model):
+    # Store the latest cumulative costs
+    ec2_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    rds_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    ebs_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    rds_snapshots_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    ebs_snapshots_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    elastic_ips_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    last_updated = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"Cumulative Cost as of {self.last_updated}"
+
+
+class CumulativeCostHistory(models.Model):
+    # Historical record of cumulative costs
+    ec2_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    rds_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    ebs_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    rds_snapshots_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    ebs_snapshots_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    elastic_ips_cost = models.DecimalField(max_digits=10, decimal_places=2, default=0.00)
+    recorded_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"History as of {self.recorded_at}"
