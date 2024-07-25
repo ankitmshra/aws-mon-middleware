@@ -16,20 +16,23 @@ from rest_framework_simplejwt.authentication import JWTAuthentication
 from .helpers.fetch_json import fetch_json as fj
 from .models import IAMUser, S3Bucket, EC2Instance, \
 EBSVolume, RDSSnapshot, ElasticIP, \
-Region, RDSInstance, EC2Snapshot
+Region, RDSInstance, EC2Snapshot, Project
 
 from .serializers import IAMUserSerializer, S3BucketSerializer, \
 RegionSerializer, RegionResourceCountSerializer, ResourceDetailSerializer, \
 EC2InstanceSerializer, RDSInstanceSerializer, EBSVolumeSerializer, \
-RDSSnapshotSerializer, EC2SnapshotSerializer, ElasticIPSerializer
+RDSSnapshotSerializer, EC2SnapshotSerializer, ElasticIPSerializer, \
+ProjectSerializer
 
 class UpdateDataView(APIView):
     permission_classes = [IsAuthenticated]
     authentication_classes = [JWTAuthentication]
+
     def get(self, request, *args, **kwargs):
         (data, fetch_status) = fj(settings.AWS_ACCESS_KEY, 
-        settings.AWS_SECRET_ACCESS_KEY, 
-                                  settings.AWS_REGION, settings.BUCKET_NAME, 
+                                  settings.AWS_SECRET_ACCESS_KEY, 
+                                  settings.AWS_REGION, 
+                                  settings.BUCKET_NAME, 
                                   settings.OBJECT_KEY)
         
         if fetch_status:
@@ -37,7 +40,6 @@ class UpdateDataView(APIView):
             directory = 'data'
 
             file_path = os.path.join(directory, 'data.json')
-
             full_directory_path = os.path.join(settings.STATIC_ROOT, directory)
             if not os.path.exists(full_directory_path):
                 os.makedirs(full_directory_path)
@@ -74,103 +76,128 @@ class UpdateDataView(APIView):
 
                 region, created = Region.objects.get_or_create(name=region_name)
 
-                # Stopped EC2 Instances
-                region.stopped_ec2_instances.clear()  # Clear existing relations
-                for ec2_instance in resources.get("StoppedEC2Instances", []):
-                    instance, _ = EC2Instance.objects.get_or_create(
-                        instance_id=ec2_instance["InstanceId"],
-                        defaults={
-                            "instance_type": ec2_instance["InstanceType"],
-                            "launch_time": ec2_instance["LaunchTime"],
-                            "region": ec2_instance["Region"],
-                            "age": ec2_instance["Age"],
-                            "tags": ec2_instance["Tags"],
-                            "status": ec2_instance["Status"],
-                            "potential_cost_savings": ec2_instance["PotentialCostSavings"],
-                            "recommendations": ec2_instance["Recommendations"]
-                        }
-                    )
-                    region.stopped_ec2_instances.add(instance)
+                # Process each resource type
+                self.update_ec2_instances(region, resources)
+                self.update_rds_instances(region, resources)
+                self.update_ebs_volumes(region, resources)
+                self.update_rds_snapshots(region, resources)
+                self.update_ec2_snapshots(region, resources)
+                self.update_elastic_ips(region, resources)
 
-                # Unused RDS Instances
-                region.unused_rds_instances.clear()  # Clear existing relations
-                for rds_instance in resources.get("UnusedRDSInstances", []):
-                    instance, _ = RDSInstance.objects.get_or_create(
-                        db_instance_identifier=rds_instance["DBInstanceIdentifier"],
-                        defaults={
-                            "db_instance_class": rds_instance["DBInstanceClass"],
-                            "backup_type": rds_instance["BackupType"],
-                            "region": rds_instance["Region"],
-                            "potential_cost_savings": rds_instance["PotentialCostSavings"],
-                            "recommendations": rds_instance["Recommendations"]
-                        }
-                    )
-                    region.unused_rds_instances.add(instance)
-
-                # Available EBS Volumes
-                region.available_ebs_volumes.clear()  # Clear existing relations
-                for ebs_volume in resources.get("AvailableEBSVolumes", []):
-                    volume, _ = EBSVolume.objects.get_or_create(
-                        volume_id=ebs_volume["VolumeId"],
-                        defaults={
-                            "size": ebs_volume["Size"],
-                            "status": ebs_volume["Status"],
-                            "region": ebs_volume["Region"],
-                            "tags": ebs_volume["Tags"],
-                            "potential_cost_savings": ebs_volume["PotentialCostSavings"],
-                            "recommendations": ebs_volume["Recommendations"]
-                        }
-                    )
-                    region.available_ebs_volumes.add(volume)
-
-                # Old RDS Snapshots
-                region.old_rds_snapshots.clear()  # Clear existing relations
-                for rds_snapshot in resources.get("OldRDSSnapshots", []):
-                    snapshot, _ = RDSSnapshot.objects.get_or_create(
-                        snapshot_id=rds_snapshot["SnapshotId"],
-                        defaults={
-                            "creation_date": rds_snapshot["CreationDate"],
-                            "region": rds_snapshot["Region"],
-                            "potential_cost_savings": rds_snapshot["PotentialCostSavings"],
-                            "recommendations": rds_snapshot["Recommendations"]
-                        }
-                    )
-                    region.old_rds_snapshots.add(snapshot)
-
-                # Old EC2 Snapshots
-                region.old_ec2_snapshots.clear()  # Clear existing relations
-                for ec2_snapshot in resources.get("OldEC2Snapshots", []):
-                    snapshot, _ = EC2Snapshot.objects.get_or_create(
-                        snapshot_id=ec2_snapshot["SnapshotId"],
-                        defaults={
-                            "creation_date": ec2_snapshot["CreationDate"],
-                            "region": ec2_snapshot["Region"],
-                            "potential_cost_savings": ec2_snapshot["PotentialCostSavings"],
-                            "recommendations": ec2_snapshot["Recommendations"]
-                        }
-                    )
-                    region.old_ec2_snapshots.add(snapshot)
-
-                # Unused Elastic IPs
-                region.unused_elastic_ips.clear()  # Clear existing relations
-                for elastic_ip in resources.get("UnusedElasticIPs", []):
-                    eip, _ = ElasticIP.objects.get_or_create(
-                        allocation_id=elastic_ip["AllocationId"],
-                        defaults={
-                            "public_ip": elastic_ip["PublicIp"],
-                            "region": elastic_ip["Region"],
-                            "tags": elastic_ip["Tags"],
-                            "potential_cost_savings": elastic_ip["PotentialCostSavings"],
-                            "recommendations": elastic_ip["Recommendations"],
-                            "age": elastic_ip["Age"]
-                        }
-                    )
-                    region.unused_elastic_ips.add(eip)
+            # Save project data
+            self.update_project_data(request.user, json_data)
 
             return Response({"message": "Data saved successfully."}, status=200)
         
         else:
             return Response({"data": data}, status=status.HTTP_401_UNAUTHORIZED)
+
+    def update_project_data(self, user, json_data):
+        # Clear existing project records for the user
+        Project.objects.filter(user=user).delete()
+        Project.objects.create(
+            user=user,
+            project_name=json_data["project_name"],
+            account_id=json_data["account_id"]
+        )
+
+    def update_ec2_instances(self, region, resources):
+        # Stopped EC2 Instances
+        region.stopped_ec2_instances.clear()
+        for ec2_instance in resources.get("StoppedEC2Instances", []):
+            instance, _ = EC2Instance.objects.get_or_create(
+                instance_id=ec2_instance["InstanceId"],
+                defaults={
+                    "instance_type": ec2_instance["InstanceType"],
+                    "launch_time": ec2_instance["LaunchTime"],
+                    "region": ec2_instance["Region"],
+                    "age": ec2_instance["Age"],
+                    "tags": ec2_instance["Tags"],
+                    "status": ec2_instance["Status"],
+                    "potential_cost_savings": ec2_instance["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": ec2_instance["Recommendations"]
+                }
+            )
+            region.stopped_ec2_instances.add(instance)
+
+    def update_rds_instances(self, region, resources):
+        # Unused RDS Instances
+        region.unused_rds_instances.clear()
+        for rds_instance in resources.get("UnusedRDSInstances", []):
+            instance, _ = RDSInstance.objects.get_or_create(
+                db_instance_identifier=rds_instance["DBInstanceIdentifier"],
+                defaults={
+                    "db_instance_class": rds_instance["DBInstanceClass"],
+                    "backup_type": rds_instance["BackupType"],
+                    "region": rds_instance["Region"],
+                    "potential_cost_savings": rds_instance["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": rds_instance["Recommendations"]
+                }
+            )
+            region.unused_rds_instances.add(instance)
+
+    def update_ebs_volumes(self, region, resources):
+        # Available EBS Volumes
+        region.available_ebs_volumes.clear()
+        for ebs_volume in resources.get("AvailableEBSVolumes", []):
+            volume, _ = EBSVolume.objects.get_or_create(
+                volume_id=ebs_volume["VolumeId"],
+                defaults={
+                    "size": ebs_volume["Size"],
+                    "region": ebs_volume["Region"],
+                    "tags": ebs_volume["Tags"],
+                    "potential_cost_savings": ebs_volume["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": ebs_volume["Recommendations"]
+                }
+            )
+            region.available_ebs_volumes.add(volume)
+
+    def update_rds_snapshots(self, region, resources):
+        # Old RDS Snapshots
+        region.old_rds_snapshots.clear()
+        for rds_snapshot in resources.get("OldRDSSnapshots", []):
+            snapshot, _ = RDSSnapshot.objects.get_or_create(
+                snapshot_id=rds_snapshot["SnapshotId"],
+                defaults={
+                    "creation_date": rds_snapshot["CreationDate"],
+                    "region": rds_snapshot["Region"],
+                    "potential_cost_savings": rds_snapshot["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": rds_snapshot["Recommendations"]
+                }
+            )
+            region.old_rds_snapshots.add(snapshot)
+
+    def update_ec2_snapshots(self, region, resources):
+        # Old EC2 Snapshots
+        region.old_ec2_snapshots.clear()
+        for ec2_snapshot in resources.get("OldEC2Snapshots", []):
+            snapshot, _ = EC2Snapshot.objects.get_or_create(
+                snapshot_id=ec2_snapshot["SnapshotId"],
+                defaults={
+                    "creation_date": ec2_snapshot["CreationDate"],
+                    "region": ec2_snapshot["Region"],
+                    "potential_cost_savings": ec2_snapshot["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": ec2_snapshot["Recommendations"]
+                }
+            )
+            region.old_ec2_snapshots.add(snapshot)
+
+    def update_elastic_ips(self, region, resources):
+        # Unused Elastic IPs
+        region.unused_elastic_ips.clear()
+        for elastic_ip in resources.get("UnusedElasticIPs", []):
+            eip, _ = ElasticIP.objects.get_or_create(
+                allocation_id=elastic_ip["AllocationId"],
+                defaults={
+                    "public_ip": elastic_ip["PublicIp"],
+                    "region": elastic_ip["Region"],
+                    "tags": elastic_ip["Tags"],
+                    "potential_cost_savings": elastic_ip["PotentialCostSavings"].split(" ")[0],
+                    "recommendations": elastic_ip["Recommendations"],
+                    "age": elastic_ip["Age"]
+                }
+            )
+            region.unused_elastic_ips.add(eip)
 
 class IAMUserListView(ListAPIView):
     permission_classes = [IsAuthenticated]
@@ -225,3 +252,14 @@ class AllResourcesView(APIView):
         }
 
         return Response(data, status=status.HTTP_200_OK)
+
+
+class FetchAccountDetailsView(APIView):
+    permission_classes = [IsAuthenticated]
+    authentication_classes = [JWTAuthentication]
+
+    def get(self, request, *args, **kwargs):
+        # Fetch the user's projects
+        projects = Project.objects.filter(user=request.user)
+        serializer = ProjectSerializer(projects, many=True)
+        return Response(serializer.data, status=200)

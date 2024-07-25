@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import IAMUser, S3Bucket, EC2Instance, \
 EBSVolume, RDSSnapshot, ElasticIP, \
-Region, RDSInstance, EC2Snapshot
+Region, RDSInstance, EC2Snapshot, Project
 class IAMUserSerializer(serializers.ModelSerializer):
     class Meta:
         model = IAMUser
@@ -80,3 +80,8 @@ class ResourceDetailSerializer(serializers.Serializer):
     rds_snapshots = RDSSnapshotSerializer(many=True)
     ec2_snapshots = EC2SnapshotSerializer(many=True)
     elastic_ips = ElasticIPSerializer(many=True)
+
+class ProjectSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Project
+        fields = ['project_name', 'account_id']
